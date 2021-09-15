@@ -35,4 +35,4 @@ Included in the package is a set of unit tests, under the `sfmcmc/tests` directo
 python3 -m pytest .
 ```
 
-This will run unit tests for the modules `poisson_2d` and `utils`.
+This will run unit tests for the modules `samplers` and `utils`.

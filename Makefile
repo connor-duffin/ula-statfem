@@ -1,8 +1,5 @@
 PYTHON3 = python3
 
-LOCAL_DIR = /Users/connor/Projects/langevin-statFEM/20210409-ULA
-REMOTE_DIR = projects/20210409-ULA
-
 NX_SMALL = 32
 OUTPUT_DIR_PRIOR_SMALL = outputs/prior-mesh-$(NX_SMALL)
 OUTPUT_DIR_POST_SMALL = outputs/posterior-mesh-ll-$(NX_SMALL)
