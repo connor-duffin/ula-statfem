@@ -1,7 +1,6 @@
 import logging
 
 import numpy as np
-import matplotlib.pyplot as plt
 import fenics as fe
 
 from petsc4py.PETSc import Mat
@@ -171,24 +170,3 @@ class SquareExpKronecker:
             return samples
         else:
             return self.P @ samples
-
-
-if __name__ == "__main__":
-    from scripts.poisson_2d import PoissonUnitTheta
-    n = 100
-    pois = PoissonUnitTheta(n)
-    scale, ell = 1., 0.1
-
-    gp = SquareExpKronecker(pois.mesh.coordinates(), scale, ell)
-
-    sample_kron = gp.sample()
-    plt.tricontourf(gp.grid[:, 0], gp.grid[:, 1], sample_kron, 64)
-    plt.show()
-
-    gp.set_permutation(pois.V)
-
-    sample_fenics = fe.Function(pois.V)
-    sample_fenics.vector()[:] = gp.P @ sample_kron
-    im = fe.plot(sample_fenics)
-    plt.colorbar(im)
-    plt.show()

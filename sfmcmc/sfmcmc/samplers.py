@@ -21,9 +21,19 @@ fe.set_log_level(40)
 class LowRankFEMCov:
     def __init__(self, C_inv, nugget=1e-8, k=50):
         """
-        Low-rank representation of the statFEM covariance matrix; computed
-        through the Cholesky of the sparse precision. Adds on a rank-correction
-        term, so that the preconditioner is not rank-deficient.
+        Low-rank representation of the statFEM covariance matrix.
+
+        Computed through the Cholesky of the sparse precision. Adds on a
+        rank-correction term, so that the preconditioner is not rank-deficient.
+
+        Parameters
+        ----------
+        C_inv: scipy.sparse matrix
+            Sparse precision matrix.
+        nugget: float, optional
+            Diagonal correction term to ensure the matrix is full-rank.
+        k: int, optional
+            Number of eigenvalue/vector pairs to compute.
         """
         factor = analyze(C_inv, ordering_method="natural")
         C_inv_chol = factor.cholesky(C_inv)
@@ -40,22 +50,38 @@ class LowRankFEMCov:
         self.identity = diags(np.ones_like(self.vals))
         self.vals_sqrt_diag = diags(self.vals_sqrt)
 
-        self.X = np.sqrt(
-            self.nugget) * (np.sqrt(self.identity + self.vals_diag / self.nugget) - self.identity)
+        self.X = np.sqrt(self.nugget) * (
+            np.sqrt(self.identity + self.vals_diag / self.nugget) -
+            self.identity)
         logger.info(f"PC spectrum: {self.vals[0]:.6e} to {self.vals[-1]:.6e}")
 
     def matvec(self, x):
+        """
+        Matrix-vector product with x.
+
+        Parameters
+        ----------
+        x: np.ndarray
+        """
         temp = self.vecs.T @ x
         return self.nugget * x + self.vecs @ (self.vals_diag @ temp)
 
     def matvec_sqrt(self, x):
+        """
+        Matrix square-root-vector product with x.
+
+        Parameters
+        ----------
+        x: np.ndarray
+        """
         temp = self.vecs.T @ x
         return (np.sqrt(self.nugget) * x + self.vecs @ (self.X @ temp))
 
 
 class LUPreconditioner:
     def __init__(self, A, G, G_sqrt, pc_type):
-        """ Preconditioning matrix using LU factors.
+        """
+        Preconditioning matrix using LU factors.
 
         Preconditioning options ('pc_type') are full LU ('lu'), scipy-default
         incomplete LU ('ilu'), and no fill-in iLU ('ilu_cheap').
@@ -192,6 +218,14 @@ class PoissonUnit:
 
 class PoissonUnitTheta:
     def __init__(self, nx):
+        """
+        StatFEM sampler for the prior, with stochastic diffusivity.
+
+        Parameters
+        ----------
+        nx: int
+            Number of FEM cells to compute over.
+        """
         self.mesh = fe.UnitSquareMesh(nx, nx)
 
         self.V = fe.FunctionSpace(self.mesh, "CG", 1)
@@ -220,7 +254,14 @@ class PoissonUnitTheta:
         self.theta_mean = 1 + 0.3 * np.sin(np.pi * (x0 + x1))
 
     def setup_G(self, sigma):
-        """Set up the statFEM G matrix. """
+        """
+        Set up the statFEM G matrix.
+
+        Parameters
+        ----------
+        sigma: float
+            Variance of the PDE RHS.
+        """
         u = fe.TrialFunction(self.V)
         v = fe.TestFunction(self.V)
 
@@ -235,7 +276,22 @@ class PoissonUnitTheta:
         self.G_sqrt = diags(G_diag_sqrt)
 
     def setup_theta(self, scale, ell, method="default", nugget=1e-10):
-        """Setup the GP diffusivity theta. """
+        """
+        Setup the log-GP diffusivity theta.
+
+        Parameters
+        ----------
+        scale: float
+            GP variance parameter.
+        ell: float
+            GP length-scale parameter.
+        method: str, optional
+            Method by which we will use the GP. Default uses the dense
+            covariance matrix. Kronecker stores the covariance as a Kronecker
+            structure, which enables dramatic speedups.
+        nugget: float, optional
+            Diagonal correction term to add on to the GP covariance.
+        """
         logger.info("starting theta setup")
         self.theta_method = method
 
@@ -258,7 +314,9 @@ class PoissonUnitTheta:
         logger.info("theta setup all done")
 
     def sample_theta(self):
-        """Sample theta into the Fenics function self.theta. """
+        """
+        Sample theta into the Fenics function self.theta.
+        """
         w = np.zeros_like(self.theta_mean)
 
         if self.theta_method == "default":
@@ -271,7 +329,18 @@ class PoissonUnitTheta:
         self.theta.vector()[:] = np.copy(np.exp(np.log(self.theta_mean) + w))
 
     def setup_pc(self, pc_type, **kwargs):
-        """Setup the preconditioner using the mean of theta. """
+        """
+        Setup the preconditioner using the mean of theta.
+
+        This does NOT mean that this preconditioner is used for the sampler
+        (you choose the sampler).
+
+        Parameters
+        ----------
+        pc_type: str
+            Which preconditioner to set up. Options are lr, amg, lu, chol, ilu,
+            diag.
+        """
         logger.info("setting up preconditioner")
         self.pc_type = pc_type
 
@@ -298,24 +367,57 @@ class PoissonUnitTheta:
         logger.info("preconditioner setup all done")
 
     def assemble_A(self):
-        """Assemble the a-form into self.A (symmetry-preserving). """
+        """
+        Assemble the a-form into self.A (symmetry-preserving).
+        """
         A, b = fe.assemble_system(self.a, self.L, self.bc)
         self.A = dolfin_to_csr(fe.as_backend_type(A).mat())
         self.b = b[:]
 
     def log_target(self, u):
-        """Log_target = -phi (unnormalized). """
+        """
+        Log_target = -phi (unnormalized).
+
+        Parameters
+        ----------
+        u: np.ndarray
+            vector to evaluate the log-target at.
+        """
         diff = self.A @ u - self.b
         return -np.dot(diff, self.G_inv @ diff) / 2
 
     def log_mala_prop(self, u, u_curr, eta):
-        """Log-proposal density (unnormalized). """
+        """
+        Log-proposal density (unnormalized) for MALA.
+
+        Parameters
+        ----------
+        u: np.ndarray
+            Vector to evaluate the log-target at.
+        u_curr: np.ndarray
+            Previous solution vector to evaluate the log-target at.
+        eta: float
+            Stepsize parameter.
+        """
         grad_phi = self.grad_phi(u_curr)
         mean = u_curr - eta * grad_phi
         return -np.dot(u - mean, u - mean) / (4 * eta)
 
     def log_pmala_prop(self, u, u_curr, eta, A_factor):
-        """Log-proposal density (unnormalized as determinants cancel). """
+        """
+        Log-proposal density (unnormalized as determinants cancel).
+
+        Parameters
+        ----------
+        u: np.ndarray
+            Vector to evaluate the log-target at.
+        u_curr: np.ndarray
+            Previous solution vector to evaluate the log-target at.
+        eta: float
+            Stepsize parameter.
+        A_factor: SuperLU factor or AMG factor.
+            Factorization of stiffness matrix, with a `solve` method.
+        """
         if type(A_factor) == SuperLU:
             A_inv_b = A_factor.solve(self.b)
         else:
@@ -326,12 +428,29 @@ class PoissonUnitTheta:
         return -np.dot(A_diff, self.G_inv @ A_diff) / (4 * eta)
 
     def grad_phi(self, u):
-        """gradient of the log-target. """
+        """
+        Gradient of the log-target.
+
+        Parameters
+        ----------
+        u: np.ndarray
+            Vector to evaluate the log-target at.
+        """
         diff = self.A @ u - self.b
         return self.A.T @ (self.G_inv @ diff)
 
     def ula_step(self, eta=1e-2, fixed_theta=False):
-        """ULA """
+        """
+        ULA step.
+
+        Parameters
+        ----------
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
+        """
         if not fixed_theta:
             self.sample_theta()
             self.assemble_A()
@@ -345,7 +464,17 @@ class PoissonUnitTheta:
         self.u[:] = np.copy(u_next)
 
     def pula_step_exact(self, eta=1e-2, method="lu", fixed_theta=False):
-        """ULA w/exact Hessian PC. """
+        """
+        ULA w/exact Hessian PC.
+
+        Parameters
+        ----------
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
+        """
         if not fixed_theta:
             self.sample_theta()
             self.assemble_A()
@@ -371,7 +500,8 @@ class PoissonUnitTheta:
         self.u = np.copy(u_next)
 
     def pula_step_lr(self, eta=1e-2, fixed_theta=False):
-        """ULA w/low-rank Hessian PC. """
+        """
+        ULA w/low-rank Hessian PC. """
         if not fixed_theta:
             self.sample_theta()
             self.assemble_A()
@@ -387,7 +517,17 @@ class PoissonUnitTheta:
         self.u = np.copy(u_next)
 
     def pula_step_lu_mean(self, eta=1e-2, fixed_theta=False):
-        """ULA w/mean-approximated A. """
+        """
+        ULA w/mean-approximated A.
+
+        Parameters
+        ----------
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
+        """
         if not fixed_theta:
             self.sample_theta()
             self.assemble_A()
@@ -405,7 +545,17 @@ class PoissonUnitTheta:
         self.u[:] = np.copy(u_next)
 
     def pula_step_ilu_mean(self, eta=1e-2, fixed_theta=False):
-        """ULA w/mean-approximated incomplete factor of A. """
+        """
+        ULA w/mean-approximated incomplete factor of A.
+
+        Parameters
+        ----------
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
+        """
         if not fixed_theta:
             self.sample_theta()
             self.assemble_A()
@@ -424,7 +574,17 @@ class PoissonUnitTheta:
         self.u[:] = np.copy(u_next)
 
     def pula_step_amg(self, eta=1e-2, fixed_theta=False):
-        """ULA step w/AMG-computed Hessian PC. """
+        """
+        ULA step w/AMG-computed Hessian PC.
+
+        Parameters
+        ----------
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
+        """
         if not fixed_theta:
             self.sample_theta()
             self.assemble_A()
@@ -446,11 +606,11 @@ class PoissonUnitTheta:
 
         Parameters
         ----------
-        eta : float
-            stepsize for Langevin diffusion.
-        fixed_theta : bool, optional
-            Whether `theta` is sampled anew (and thus whether or not the
-            stiffness matrix is assembled).
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -485,13 +645,11 @@ class PoissonUnitTheta:
 
         Parameters
         ----------
-        eta : float
-            stepsize for Langevin diffusion.
-        method : string, optional
-            how to compute the preconditioner; either 'lu' or 'amg'.
-        fixed_theta : bool, optional
-            Whether `theta` is sampled anew (and thus whether or not the
-            stiffness matrix is assembled).
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -523,7 +681,14 @@ class PoissonUnitTheta:
         return accepted
 
     def exact_step(self, method="lu"):
-        """Exact sample. """
+        """
+        Exact sample.
+
+        Parameters
+        ----------
+        method: str, optional
+            Method to sample with. Either `lu` or `amg`.
+        """
         self.sample_theta()
         self.assemble_A()
 
@@ -544,10 +709,32 @@ class PoissonUnitTheta:
 
 class PoissonUnitThetaPosterior(PoissonUnitTheta):
     def __init__(self, nx):
+        """
+        StatFEM sampler for the posterior, with stochastic diffusivity.
+
+        Parameters
+        ----------
+        nx: int
+            Number of FEM cells to compute over.
+        """
         super().__init__(nx=nx)
 
     def setup_dgp(self, x_obs, n_obs, sigma, scale_factor=1.):
-        """Set the simulation settings for the data generating process. """
+        """
+        Set the simulation settings for the data generating process.
+
+        Parameter
+        ---------
+        x_obs: np.ndarray
+            Array of observation locations.
+        n_obs: int
+            Number of observation vectors.
+        sigma: float
+            Observational noise parameter.
+        scale_factor: float, optional
+            Factor to scale generated vectors by (used to induce model
+            mismatch).
+        """
         assert x_obs.shape[1] == 2
 
         self.x_obs = x_obs
@@ -568,7 +755,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
                     self.n_y)
 
     def setup_pc_post(self):
-        """Setup preconditioning using mean-theta stiffness. """
+        """
+        Setup preconditioning using mean-theta stiffness.
+
+        Uses the Cholesky of the sparse precision matrix.
+        """
         self.theta.vector()[:] = np.copy(self.theta_mean)
         self.assemble_A()
 
@@ -580,6 +771,10 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
         self.M_chol = self.factor.cholesky(C_inv)
 
     def generate_data(self):
+        """
+        Generate a set of data, given the current set of data-generating
+        parameters.
+        """
         u_sample = np.zeros((self.n_dofs, self.n_obs))
 
         for i in range(self.n_obs):
@@ -599,7 +794,14 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
         self.y_mean = np.sum(self.y, axis=1) / self.n_obs
 
     def load_data(self, y):
-        """Load a pre-generated dataset. """
+        """
+        Load a pre-generated dataset.
+
+        Parameters
+        ----------
+        y: np.ndarray
+            Array of observations.
+        """
         self.y[:] = y
         assert self.y.shape == (self.n_y, self.n_obs)
 
@@ -607,7 +809,9 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
         assert self.y_mean.shape == (self.n_y, )
 
     def sample_posterior_exact(self):
-        """ Sample the posterior; efficient due to sparsity of the precision. """
+        """
+        Sample the posterior; efficient due to sparsity of the precision.
+        """
         self.sample_theta()
         self.assemble_A()
 
@@ -626,8 +830,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
 
         Parameters
         ----------
-        eta : float
-        pc : bool, optional
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         grad_phi = self.grad_phi(self.u)
         z = np.random.normal(size=(self.n_dofs, ))
@@ -647,8 +854,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
 
         Parameters
         ----------
-        eta : float
-        fixed_theta : bool, optional
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -662,8 +872,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
 
         Parameters
         ----------
-        eta : float
-        fixed_theta : bool, optional
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -677,7 +890,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
 
         Parameters
         ----------
-        eta : float
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -705,7 +922,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
 
         Parameters
         ----------
-        eta : float
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -734,8 +955,11 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
 
         Parameters
         ----------
-        eta : float
-        fixed_theta : bool
+        eta: float
+            Stepsize parameter.
+        fixed_theta: bool
+            Whether `theta` is sampled, or, reused from the previous
+            iterations; if reused, the stiffness matrix is not assembled.
         """
         if not fixed_theta:
             self.sample_theta()
@@ -762,46 +986,93 @@ class PoissonUnitThetaPosterior(PoissonUnitTheta):
             return False
 
     def log_likelihood(self, u):
-        """Log likelihood (up to prop. constant). """
+        """
+        Log likelihood (up to prop. constant).
+
+        Parameters
+        ----------
+        u: np.ndarray
+            vector to evaluate the log-likelihood at.
+        """
         resid = (self.y.T - self.H @ u).T  # transpose to make array commute
         return -np.sum(resid**2) / (2 * self.sigma_y**2)
 
     def log_target(self, u):
-        """Log posterior (up to prop. constant). """
+        """
+        Log posterior (up to prop. constant).
+
+        Parameters
+        ----------
+        u: np.ndarray
+            vector to evaluate the log-target at.
+        """
         diff = self.A @ u - self.b
         log_prior = -np.dot(diff, self.G_inv @ diff) / 2
         log_likelihood = self.log_likelihood(u)
         return log_prior + log_likelihood
 
     def log_mala_prop(self, u, u_curr, eta):
-        """Log-proposal density (unnormalized) for MALA.
-        Computes q(u | u_curr). """
+        """
+        Log-proposal density (unnormalized) for MALA. Computes q(u | u_curr).
+
+        Parameters
+        ----------
+        u: np.ndarray
+            Vector to evaluate the log-target at.
+        u_curr: np.ndarray
+            Previous solution vector to evaluate the log-target at.
+        eta: float
+            Stepsize parameter.
+        """
         grad_phi = self.grad_phi(u_curr)
         mean = u_curr - eta * grad_phi
         return -np.dot(u - mean, u - mean) / (4 * eta)
 
     def log_pmala_prop(self, u, u_curr, eta):
-        """Log-proposal density (unnormalized) for preconditioned-MALA.
-        Computes q(u | u_curr).
+        """
+        Log-proposal density (unnormalized) for preconditioned-MALA. Computes
+        q(u | u_curr).
+
+        Parameters
+        ----------
+        u: np.ndarray
+            Vector to evaluate the log-target at.
+        u_curr: np.ndarray
+            Previous solution vector to evaluate the log-target at.
+        eta: float
+            Stepsize parameter.
         """
         grad_phi = self.grad_phi(u_curr)
         mean = u_curr - eta * self.M_chol.solve_A(grad_phi)
         return -np.dot(u - mean, self.M @ (u - mean)) / (4 * eta)
 
     def grad_phi(self, u):
+        """
+        Gradient of the log posterior.
+
+        Parameters
+        ----------
+        u: np.ndarray
+            vector to evaluate the log-posterior at.
+        """
         diff = self.A @ u - self.b
         resid = self.y_mean - self.H @ u
         return (self.A.T @ (self.G_inv @ diff) -
                 self.n_obs * self.H.T @ (self.R_inv @ resid))
 
     def compute_precision(self):
-        """Compute the precision and update the cholesky. """
+        """
+        Compute the precision and update the cholesky.
+        """
         C_inv = (self.A.T @ self.G_inv @ self.A +
                  self.n_obs * self.H.T @ self.R_inv @ self.H)
         self.factor.cholesky_inplace(C_inv)
         return C_inv
 
     def sample_prior_exact(self):
+        """
+        Helper function to sample from the prior (uses the LU decomposition).
+        """
         self.sample_theta()
         self.assemble_A()
 
