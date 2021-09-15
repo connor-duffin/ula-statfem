@@ -1,0 +1,19 @@
+name: langevin-statfem
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - fenics
+  - pip
+  - pip:
+    - arviz
+    - h5py
+    - ipython
+    - notebook
+    - matplotlib
+    - pyDOE
+    - pyamg
+    - pytest
+    - scipy
+    - scikit-sparse
+    - tabulate
