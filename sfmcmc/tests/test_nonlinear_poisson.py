@@ -45,6 +45,7 @@ def test_target_gradients_1d():
     grad_true = np.dot(d, grad)
 
     rel_error = np.abs(grad_approx - grad_true) / np.abs(grad_true)
+    print(rel_error)
     assert rel_error <= rtol
 
 

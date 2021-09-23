@@ -103,7 +103,8 @@ class NonlinearPoisson1D:
 
     def setup_pc(self):
         self.solver.solve()
-        J = 
+        u_solve = self.u.vector()[:]
+        F, J = self.assemble_system(u_solve)
 
     def assemble_system(self, u):
         self.u.vector()[:] = u
@@ -130,7 +131,7 @@ class NonlinearPoisson1D:
         J_lu = splu(J.tocsc())
 
         trace_term = self.compute_trace_derivative(J_lu)
-        return -trace_term + J @ self.G_inv @ F
+        return -trace_term + J.T @ self.G_inv @ F
 
     def log_target(self, u):
         F, J = self.assemble_system(u)
@@ -138,6 +139,14 @@ class NonlinearPoisson1D:
         log_det = np.sum(np.log(J_lu.L.diagonal())
                          + np.log(J_lu.U.diagonal()))
         return -log_det + F.T @ self.G_inv @ F / 2
+
+    def ula_step(self, eta=1e-2):
+        z = np.random.normal(size=(self.n_dofs, ))
+        z[self.bc_dofs] = 0.
+
+        u_curr = self.u_curr
+        u_curr -= eta * self.grad_phi(u_curr) + np.sqrt(2 * eta) * z
+        self.u_curr[:] = u_curr
 
     def exact_sample(self):
         """Generate exact sample with Fenics. """
