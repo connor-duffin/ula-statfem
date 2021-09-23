@@ -5,6 +5,7 @@ from dolfin import *
 
 from scipy.sparse import diags
 from scipy.sparse.linalg import splu
+from sksparse.cholmod import cholesky
 
 from .utils import dolfin_to_csr, sq_exp_covariance, SquareExpKronecker
 
@@ -25,7 +26,7 @@ class NonlinearPoisson1D:
 
         self.xi = Function(self.V)
         self.f = interpolate(
-            Expression("8 * sin(pi * x[0])", degree=4), self.V)
+            Expression("8 * sin(3 * pi * pow(x[0], 2))", degree=4), self.V)
 
         x0 = self.x_dofs[:, 0]
         self.F = ((1 + self.u**2) * inner(grad(self.u), grad(v)) -
@@ -106,6 +107,9 @@ class NonlinearPoisson1D:
         u_solve = self.u.vector()[:]
         F, J = self.assemble_system(u_solve)
 
+        self.M_inv = J.T @ self.G_inv @ J
+        self.M_inv_chol = cholesky(self.M_inv, ordering_method="natural")
+
     def assemble_system(self, u):
         self.u.vector()[:] = u
         J, F = assemble_system(self.J, self.F, bcs=self.bc)
@@ -136,8 +140,7 @@ class NonlinearPoisson1D:
     def log_target(self, u):
         F, J = self.assemble_system(u)
         J_lu = splu(J.tocsc())
-        log_det = np.sum(np.log(J_lu.L.diagonal())
-                         + np.log(J_lu.U.diagonal()))
+        log_det = np.sum(np.log(J_lu.L.diagonal()) + np.log(J_lu.U.diagonal()))
         return -log_det + F.T @ self.G_inv @ F / 2
 
     def ula_step(self, eta=1e-2):
@@ -147,6 +150,17 @@ class NonlinearPoisson1D:
         u_curr = self.u_curr
         u_curr -= eta * self.grad_phi(u_curr) + np.sqrt(2 * eta) * z
         self.u_curr[:] = u_curr
+
+    def pula_step(self, eta=1e-2):
+        z = np.random.normal(size=(self.n_dofs, ))
+        z[self.bc_dofs] = 0.
+
+        # apply preconditioner
+        grad_phi = self.grad_phi(self.u_curr)
+        grad_phi_pc = self.M_inv_chol.solve_A(grad_phi)
+        w = self.M_inv_chol.solve_Lt(z, use_LDLt_decomposition=False)
+
+        self.u_curr[:] -= (eta * grad_phi_pc + np.sqrt(2 * eta) * w)
 
     def exact_sample(self):
         """Generate exact sample with Fenics. """

@@ -3,9 +3,23 @@ import pytest
 import numpy as np
 import fenics as fe
 
+from sksparse.cholmod import Factor as CholFactor
 from scipy.sparse.linalg import splu
 
+from scipy.sparse import csc_matrix
+
 from sfmcmc.nonlinear_poisson import NonlinearPoisson1D, NonlinearPoisson
+
+
+def test_pc_1d():
+    pois = NonlinearPoisson1D(32)
+    pois.setup_G(0.05)
+    pois.setup_pc()
+
+    # check that the setup is OK
+    assert type(pois.M_inv) == csc_matrix
+    assert type(pois.M_inv_chol) == CholFactor
+    assert callable(pois.M_inv_chol.solve_A)
 
 
 def test_trace_computation():
