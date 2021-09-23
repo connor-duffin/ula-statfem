@@ -148,6 +148,26 @@ class NonlinearPoisson1D:
         u_curr -= eta * self.grad_phi(u_curr) + np.sqrt(2 * eta) * z
         self.u_curr[:] = u_curr
 
+    def tula_step(self, eta=1-2):
+        z = np.random.normal(size=(self.n_dofs, ))
+        z[self.bc_dofs] = 0.
+
+        u_curr = self.u_curr
+        grad_phi = self.grad_phi(u_curr)
+        gradnorm = np.linalg.norm(grad_phi)
+        u_curr -= eta * (1 / (1 + eta * gradnorm)) * grad_phi + np.sqrt(2*eta) * z
+        self.u_curr[:] = u_curr
+
+    def tulac_step(self, eta=1 - 2):
+        z = np.random.normal(size=(self.n_dofs,))
+        z[self.bc_dofs] = 0.
+
+        u_curr = self.u_curr
+        grad_phi = self.grad_phi(u_curr)
+        gradnorm = np.abs(grad_phi)
+        u_curr -= eta * (1 / (1 + eta * gradnorm)) * grad_phi + np.sqrt(2 * eta) * z
+        self.u_curr[:] = u_curr
+
     def exact_sample(self):
         """Generate exact sample with Fenics. """
         self.generate_xi(scale_Minv=True)
