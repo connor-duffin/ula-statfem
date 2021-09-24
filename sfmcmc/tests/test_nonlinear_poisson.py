@@ -22,6 +22,12 @@ def test_pc_1d():
     assert callable(pois.M_inv_chol.solve_A)
 
 
+def test_hessian_computations():
+    pois = NonlinearPoisson1D(32)
+    pois.setup_G(0.5)
+    pois.compute_hessian_map()
+
+
 def test_trace_computation():
     pois = NonlinearPoisson1D(32)
     u_np = 1 + 0.2 * np.random.normal(size=(pois.n_dofs, ))

@@ -115,6 +115,40 @@ class NonlinearPoisson1D:
         J, F = assemble_system(self.J, self.F, bcs=self.bc)
         return F[:], dolfin_to_csr(J)
 
+    def compute_hessian_map(self):
+        """ Evaluate the Hessian matrix at the MAP. """
+        self.solver.solve()
+        F, J = self.assemble_system(self.u.vector()[:])
+        J_lu = splu(J.tocsc())
+
+        H = (J.T @ self.G_inv @ J).todense()
+        for i in range(self.n_dofs):
+            d = Function(self.V)
+            d.vector()[i] = 1.
+
+            # derivative in two directions
+            ddJ = assemble(
+                derivative(derivative(self.J, self.u, d), self.u, d)).array()
+            H[i, i] -= np.trace(J_lu.solve(ddJ))
+
+            for j in range(self.n_dofs):
+                e = Function(self.V)
+                e.vector()[j] = 1.
+
+                # derivative in each direction
+                dJ_first_direction = assemble(derivative(self.J, self.u, d)).array()
+                dJ_second_direction = assemble(derivative(self.J, self.u, e)).array()
+
+                J_inv_first_direction = J_lu.solve(dJ_first_direction)
+                J_inv_second_direction = J_lu.solve(dJ_second_direction)
+
+                trace_first_order = np.sum(J_inv_first_direction *
+                                           J_inv_second_direction.T)
+
+                H[i, j] -= trace_first_order
+
+        return H
+
     def compute_trace_derivative(self, J_factor):
         # TODO: clean up this loop
         tr = np.zeros((self.n_dofs, ))
@@ -162,24 +196,26 @@ class NonlinearPoisson1D:
 
         self.u_curr[:] -= (eta * grad_phi_pc + np.sqrt(2 * eta) * w)
 
-    def tula_step(self, eta=1-2):
+    def tula_step(self, eta=1 - 2):
         z = np.random.normal(size=(self.n_dofs, ))
         z[self.bc_dofs] = 0.
 
         u_curr = self.u_curr
         grad_phi = self.grad_phi(u_curr)
         gradnorm = np.linalg.norm(grad_phi)
-        u_curr -= eta * (1 / (1 + eta * gradnorm)) * grad_phi + np.sqrt(2*eta) * z
+        u_curr -= eta * (1 / (1 + eta * gradnorm)) * grad_phi + np.sqrt(
+            2 * eta) * z
         self.u_curr[:] = u_curr
 
     def tulac_step(self, eta=1 - 2):
-        z = np.random.normal(size=(self.n_dofs,))
+        z = np.random.normal(size=(self.n_dofs, ))
         z[self.bc_dofs] = 0.
 
         u_curr = self.u_curr
         grad_phi = self.grad_phi(u_curr)
         gradnorm = np.abs(grad_phi)
-        u_curr -= eta * (1 / (1 + eta * gradnorm)) * grad_phi + np.sqrt(2 * eta) * z
+        u_curr -= eta * (1 / (1 + eta * gradnorm)) * grad_phi + np.sqrt(
+            2 * eta) * z
         self.u_curr[:] = u_curr
 
     def exact_sample(self):
