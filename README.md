@@ -1,6 +1,15 @@
 # Langevin samplers for statFEM
 
-Scripts and notebooks for simulations on unadjusted Langevin (ULA) and preconditioned unadjusted Langevin samplers (pULA), using `Fenics` for FEM. Based on the work of Akyildiz, Duffin, Sabanis, and Girolami (2021).
+Scripts and notebooks for simulations on unadjusted Langevin (ULA) and preconditioned unadjusted Langevin samplers (pULA), for the statistical finite element method. This uses `Fenics` for FEM. Based on the work of [Akyildiz, Duffin, Sabanis, and Girolami (2021)](https://arxiv.org/abs/2110.11131). You can cite this via:
+
+```{bibtex}
+@article{akyildiz2021statistical,
+  title={Statistical Finite Elements via Langevin Dynamics},
+  author={Akyildiz, {\"O}mer Deniz and Duffin, Connor and Sabanis, Sotirios and Girolami, Mark},
+  journal={arXiv preprint arXiv:2110.11131},
+  year={2021}
+}
+```
 
 ## Setup
 
