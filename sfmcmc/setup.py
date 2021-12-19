@@ -11,7 +11,7 @@ setuptools.setup(
     description="Statistical Finite elements via Markov Chain Monte Carlo",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/connor-duffin",
+    url="https://github.com/connor-duffin/sfmcmc",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -20,5 +20,6 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     python_requires=">=3.6",
     install_requires=[
-        "numpy", "scipy", "fenics", "scikit-sparse", "petsc4py", "pytest"
+        "numpy", "scipy", "fenics", "scikit-sparse", "petsc4py", "pyamg",
+        "pytest"
     ])

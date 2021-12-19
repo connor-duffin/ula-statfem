@@ -2,18 +2,30 @@ import pytest
 import numpy as np
 import fenics as fe
 
-from scipy.sparse import csr_matrix
+import jax.numpy as jnp
+from scipy.sparse import csr_matrix, rand
 from petsc4py.PETSc import Mat
 
 from sfmcmc.samplers import PoissonUnitTheta
 from sfmcmc.utils import (build_observation_operator, dolfin_to_csr,
                           sq_exp_covariance, cartesian, kron_matvec,
-                          SquareExpKronecker)
+                          SquareExpKronecker, sparse_to_jax)
 
 
 @pytest.fixture
 def pois():
     return PoissonUnitTheta(32)
+
+
+def test_sparse_to_jax():
+    n = 100
+    A = rand(n, n, format="csr")
+    x = np.random.normal(size=(n, ))
+
+    A_jax = sparse_to_jax(A)
+    assert "rows" in A_jax
+    assert "cols" in A_jax
+    assert "data" in A_jax
 
 
 def test_build_observation_operator():

@@ -2,6 +2,9 @@ import logging
 
 import numpy as np
 import fenics as fe
+import jax.numpy as jnp
+
+from jax import jit
 
 from petsc4py.PETSc import Mat
 from scipy.linalg import cholesky
@@ -124,6 +127,27 @@ def build_observation_operator(x_obs, V, sub=0, out="scipy"):
         return pH
     else:
         raise ValueError(f"out option {out} not recognised")
+
+
+def sparse_to_jax(A):
+    A_coo = A.tocoo()  # csr, csc usually
+
+    rows = jnp.array(A_coo.row)
+    cols = jnp.array(A_coo.col)
+    data = jnp.array(A_coo.data)
+
+    A_jax = {"rows": rows, "cols": cols, "data": data}
+    return A_jax
+
+
+@jit
+def A_jax_matvec(A, u, x):
+    """
+    Compute the matrix-vector product A u. This assumes that the `A` operator
+    is stored as a `dict`, representing the COOrdinated format of sparse
+    matrices.
+    """
+    return x.at[A["rows"]].add(A["data"] * u[A["cols"]])
 
 
 class SquareExpKronecker:
