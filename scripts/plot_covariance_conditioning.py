@@ -76,6 +76,6 @@ if __name__ == "__main__":
 
     axs[1].set_xlabel(r"$h$")
     axs[1].set_ylabel(r"$\mathbb{E}_\theta[\kappa_\theta^M]$")
-    axs[1].set_title("Mean-theta preconditioning")
+    axs[1].set_title(r"Mean-$\theta$ preconditioning")
     plt.savefig(output_file, dpi=300)
     plt.close()

@@ -4,10 +4,12 @@ import h5py
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from argparse import ArgumentParser
 from arviz import autocorr, ess
 from tabulate import tabulate
+from matplotlib.ticker import ScalarFormatter
 
 from plot_samplers_2d import read_data
 
@@ -28,7 +30,7 @@ def plot_observations_mesh(nx, data_file, output_file):
             label="Observation locations")
     ax.set_xlabel("$x_1$")
     ax.set_ylabel("$x_2$")
-    plt.savefig(output_file, dpi=300)
+    plt.savefig(output_file, dpi=600)
     plt.close()
 
 
@@ -55,6 +57,32 @@ def traceplot_dofs(dofs, file_ids, labels, output_file):
     plt.close()
 
 
+def acf_dofs(dofs, file_ids, labels, output_file, warmup=0):
+    n_cols = 4
+    n_dofs = len(dofs)
+    n_rows = n_dofs // n_cols
+
+    fig, axs = plt.subplots(n_rows,
+                            n_cols,
+                            constrained_layout=True,
+                            figsize=(15, 3 * n_rows))
+    axs = axs.flatten()
+    for file_id, label in zip(file_ids, labels):
+        samples, _ = read_data(SAMPLER_FILES[file_id],
+                               dofs=dofs,
+                               warmup=warmup)
+
+        max_lags = 200
+        for i in range(n_dofs):
+            acf = autocorr(samples[i, :])
+            axs[i].plot(acf[:max_lags], ".-", label=f"{label}", markevery=10)
+            axs[i].set_title(f"ACF @ DOF {dofs[i]}")
+
+    axs[0].legend()
+    plt.savefig(output_file, dpi=300)
+    plt.close()
+
+
 def traceplot_scalar(file_ids, labels, output_file):
     n_plots = len(file_ids)
     fig, axs = plt.subplots(1,
@@ -62,25 +90,14 @@ def traceplot_scalar(file_ids, labels, output_file):
                             constrained_layout=True,
                             figsize=(5, 3),
                             sharex=True)
-    # axins = axs.inset_axes([0.45, 0.2, 0.5, 0.5])
-
     for i in range(n_plots):
         fem_dof, _ = read_data(SAMPLER_FILES[file_ids[i]], dofs=[100])
         axs.plot(fem_dof.T, alpha=0.8, label=labels[i])
-        # axins.plot(fem_dof[:, 0:subset].T, alpha=0.8, label=labels[i])
-
-    # axins.set_ylim(*axs.get_ylim())
-    # axins.set_xlim(-50, 1000)
-    # axins.set_xticks([0., 500])
-    # axins.set_yscale("log")
-    # axins.set_yticks([])
-    # axins.set_xticklabels("")
-    # axins.set_yticklabels("")
 
     axs.set_ylabel(r"$u^{(100)}$")
     axs.set_xlabel(r"Iteration $k$")
 
-    fig.savefig(output_file, dpi=300)
+    fig.savefig(output_file, dpi=400)
     plt.close()
 
 
@@ -118,20 +135,24 @@ def acf_scalar(file_ids, labels, output_dir, warmup=0):
 
     max_lags = 200
     for i in range(n_plots):
-        log_measure, _ = read_data(SAMPLER_FILES[file_ids[i]],
+        log_measure, t = read_data(SAMPLER_FILES[file_ids[i]],
                                    dofs=[100],
                                    warmup=warmup)
 
-        log_measure = log_measure[0, :]
-        n_samples = log_measure.shape[0]
+        if len(log_measure.shape) == 2:
+            log_measure = log_measure[0, :]
+            n_samples = log_measure.shape[0]
+        else:
+            n_samples = len(log_measure)
+
         # ACF
         acfs = autocorr(log_measure)
-        print(acfs.shape)
         ax.plot(acfs[:max_lags], ".-", label=f"{labels[i]}", markevery=10)
 
         # ESS
         n_eff = ess(log_measure)
         print(f"ESS ({labels[i]}): {n_eff}")
+        print(f"ESS/s ({labels[i]}): {n_eff / t:.6f}")
 
         # integrated ACF
         tau = n_samples / n_eff
@@ -144,13 +165,52 @@ def acf_scalar(file_ids, labels, output_dir, warmup=0):
     plt.close()
 
 
+def acf_scalars(file_ids, labels, output_dir, warmup=0):
+    """ Plot ACF, traceplots, and print ESS of the scalar. """
+    n_plots = len(file_ids)
+    fig, ax = plt.subplots(1, 1, constrained_layout=True, figsize=(4, 3))
+
+    max_lags = 200
+    for marker, dof in zip(["o", "^"], [[100], [10_000]]):
+        for i in range(n_plots):
+            log_measure, t = read_data(SAMPLER_FILES[file_ids[i]],
+                                       dofs=dof,
+                                       warmup=warmup)
+
+            if len(log_measure.shape) == 2:
+                log_measure = log_measure[0, :]
+                n_samples = log_measure.shape[0]
+            else:
+                n_samples = len(log_measure)
+
+            # ACF
+            acfs = autocorr(log_measure)
+            ax.plot(acfs[:max_lags], alpha=0.8, marker=marker, markevery=10)
+
+        ax.set_prop_cycle(None)  # reset the colour cycler
+
+    handles = []
+    cmap = plt.get_cmap("tab10")
+    for i in range(n_plots):
+        handles.append(mpatches.Patch(color=cmap(i), label=labels[i]))
+
+    ax.set_ylabel("ACF")
+    ax.set_xlabel(r"Lag $j$")
+    ax.legend(handles=handles,
+              bbox_to_anchor=(1.04, 0.5),
+              loc="center left",
+              borderaxespad=0)
+    fig.savefig(output_dir + "acf-scalars.png", dpi=300)
+    plt.close()
+
+
 def sampler_errors_table(warmup,
                          file_ids,
                          labels,
                          output_file,
                          include_ess=False,
                          ess_dof="log_measure"):
-    samples_exact, _ = read_data(SAMPLER_FILES["exact"], warmup=0)
+    samples_exact, _ = read_data(SAMPLER_FILES["exact"], warmup=warmup)
 
     norm = np.linalg.norm
     mean_exact = np.mean(samples_exact, axis=1)
@@ -159,8 +219,17 @@ def sampler_errors_table(warmup,
     var_exact = np.var(samples_exact, axis=1)
     norm_var_exact = norm(var_exact)
 
-    mean_approx = np.zeros_like(samples_exact[:, 0])
-    var_approx = np.zeros_like(samples_exact[:, 0])
+    print(mean_exact.shape)
+    print(var_exact.shape)
+    mean_approx = np.zeros_like(mean_exact)
+    var_approx = np.zeros_like(mean_exact)
+
+    # if len(samples_exact.shape) == 1:
+    #     mean_approx = np.zeros_like(samples_exact[:])
+    #     var_approx = np.zeros_like(samples_exact[:])
+    # else:
+    #     mean_approx = np.zeros_like(samples_exact[:, 0])
+    #     var_approx = np.zeros_like(samples_exact[:, 0])
 
     del samples_exact
     gc.collect()
@@ -171,7 +240,7 @@ def sampler_errors_table(warmup,
         print(f"table row: {label}")
         row.append(label)
         if label == "Exact":
-            s, _ = read_data(SAMPLER_FILES[file_id], warmup=0)
+            s, _ = read_data(SAMPLER_FILES[file_id], warmup=warmup)
             row.append("---")
             row.append("---")
         else:
@@ -190,7 +259,7 @@ def sampler_errors_table(warmup,
             if label == "Exact":
                 log_measure, t_sample = read_data(SAMPLER_FILES[file_id],
                                                   dofs=ess_dof,
-                                                  warmup=0)
+                                                  warmup=warmup)
             else:
                 log_measure, t_sample = read_data(SAMPLER_FILES[file_id],
                                                   dofs=ess_dof,
@@ -198,7 +267,7 @@ def sampler_errors_table(warmup,
 
             # NOTE: this assumes t_sample is for the post-warmup iterations
             samples_n_eff = ess(log_measure)
-            row.append(f"{samples_n_eff / t_sample:.3f}")
+            row.append(f"{samples_n_eff / t_sample:.4f}")
 
         table.append(row)
         row = []
@@ -208,10 +277,8 @@ def sampler_errors_table(warmup,
 
     header_simple = ["sampler", "mean rel. error", "var rel. error"]
     header = [
-        "Sampler", "$\\lVert \\mathbb{E}_K (u) - \\mathbb{E} (u) \\rVert /" +
-        "\\lVert \\mathbb{E} (u) \\rVert$",
-        "$\\lVert \\mathrm{var}_K (u) - \\mathrm{var} (u)\\rVert / " +
-        "\\lVert \\mathrm{var}(u) \\rVert$"
+        "Sampler", "$\\mathsf{Error}(\\mathbb{E}(u))$",
+        "$\\mathsf{Error}(\\mathrm{var}(u))$"
     ]
 
     if include_ess:
@@ -228,9 +295,72 @@ def sampler_errors_table(warmup,
                      tablefmt="latex_raw"))
 
 
+def plot_mean_var(nx, data_file, warmup, file_ids, labels, output_dir):
+    from run_samplers_2d_posterior import init_pois
+    pois = init_pois(nx, data_file)
+    x_dofs = pois.x_dofs
+
+    s, _ = read_data(SAMPLER_FILES["pula"], warmup=warmup)
+    mean_approx = np.mean(s, axis=1)
+    var_approx = np.var(s, axis=1)
+    mean_vmin, mean_vmax = np.amin(mean_approx), np.amax(mean_approx)
+    var_vmin, var_vmax = np.amin(var_approx), np.amax(var_approx)
+
+    i = 0
+    n_plot = len(file_ids)
+    subplot_kwargs = dict(nrows=1,
+                          ncols=n_plot,
+                          dpi=600,
+                          sharex=True,
+                          sharey=True,
+                          figsize=(8, 1.75),
+                          constrained_layout=True)
+    fig, axs = plt.subplots(**subplot_kwargs)
+    axs = axs.flatten()
+    axs[0].set_ylabel(r"$x_2$")
+    for i, (label, file_id) in enumerate(zip(labels, file_ids)):
+        s, _ = read_data(SAMPLER_FILES[file_id], warmup=warmup)
+
+        mean_approx = np.mean(s, axis=1)
+        im = axs[i].tricontourf(x_dofs[:, 0],
+                                x_dofs[:, 1],
+                                mean_approx,
+                                64,
+                                vmin=mean_vmin,
+                                vmax=mean_vmax)
+        axs[i].set_title(label)
+        axs[i].set_xlabel(r"$x_1$")
+
+    plt.colorbar(im, ax=axs[-1])
+    plt.savefig(output_dir + "means.png")
+    plt.close()
+
+    fig, axs = plt.subplots(**subplot_kwargs)
+    axs = axs.flatten()
+    axs[0].set_ylabel(r"$x_2$")
+    for i, (label, file_id) in enumerate(zip(labels, file_ids)):
+        s, _ = read_data(SAMPLER_FILES[file_id], warmup=warmup)
+        var_approx = np.var(s, axis=1)
+        im = axs[i].tricontourf(x_dofs[:, 0],
+                                x_dofs[:, 1],
+                                var_approx,
+                                64,
+                                vmin=var_vmin,
+                                vmax=var_vmax)
+        axs[i].set_title(label)
+        axs[i].set_xlabel(r"$x_1$")
+
+    formatter = ScalarFormatter(useOffset=True)
+    formatter.set_powerlimits((-2, 2))
+    plt.colorbar(im, ax=axs[-1], format=formatter)
+    plt.savefig(output_dir + "vars.png")
+    plt.close()
+
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--nx", type=int)
+    parser.add_argument("--file_ids", type=str, nargs="+")
     parser.add_argument("--input_dir", type=str)
     parser.add_argument("--output_dir", type=str)
     parser.add_argument("--n_warmup", type=int, default=1)
@@ -245,30 +375,44 @@ if __name__ == "__main__":
         "pmala": args.input_dir + "pmala.h5",
         "pcn": args.input_dir + "pcn.h5"
     }
+    for file_id in args.file_ids:
+        if file_id not in SAMPLER_FILES.keys():
+            raise ValueError("Unexpected file_id")
 
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
     trace_dofs = np.linspace(100, (args.nx + 1)**2 - 1, 8, dtype=np.int64)
 
-    file_ids = ["ula", "pula", "mala", "pmala", "pcn"]
-    labels = ["ULA", "pULA", "MALA", "pMALA", "pCN"]
-
-    plot_observations_mesh(args.nx, SAMPLER_FILES["data"],
-                           output_dir + "mesh-obs-locations.png")
-    traceplot_scalar_time(file_ids, labels, 5000,
-                          output_dir + "traceplot-times.png")
-    traceplot_dofs(trace_dofs, file_ids, labels,
-                   output_dir + "traceplot-dofs.png")
-    acf_scalar(file_ids, labels, output_dir, warmup=args.n_warmup)
-    traceplot_scalar(file_ids, labels, output_dir + "traceplot-scalar.png")
-
-    file_ids.insert(0, "exact")
-    labels.insert(0, "Exact")
+    labels = []
+    for file_id in args.file_ids:
+        if file_id[0].upper() == "P":
+            labels.append(file_id[0].lower() + file_id[1:].upper())
+        else:
+            labels.append(file_id.upper())
 
     sampler_errors_table(args.n_warmup,
-                         file_ids,
+                         args.file_ids,
                          labels,
                          output_dir + "error-table.tex",
                          include_ess=True,
-                         ess_dof="log_measure")
+                         ess_dof=[100])
+
+    plot_observations_mesh(args.nx, SAMPLER_FILES["data"],
+                           output_dir + "mesh-obs-locations.png")
+    plot_mean_var(args.nx, SAMPLER_FILES["data"], args.n_warmup, args.file_ids,
+                  labels, output_dir)
+
+    acf_dofs(trace_dofs,
+             args.file_ids,
+             labels,
+             output_dir + "acf-dofs.png",
+             warmup=args.n_warmup)
+    acf_scalar(args.file_ids, labels, output_dir, warmup=args.n_warmup)
+    acf_scalars(args.file_ids, labels, output_dir, warmup=args.n_warmup)
+
+    traceplot_dofs(trace_dofs, args.file_ids, labels,
+                   output_dir + "traceplot-dofs.png")
+    traceplot_scalar(args.file_ids, labels,
+                     output_dir + "traceplot-scalar.png")
+

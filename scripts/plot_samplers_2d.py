@@ -447,15 +447,12 @@ if __name__ == "__main__":
         file_ids = ["pula", "pmala", "mala"]
         labels = ["pULA", "pMALA", "MALA"]
     else:
-        file_ids = ["ula", "pula", "mala", "pmala", "pcn"]
-        labels = ["ULA", "pULA", "MALA", "pMALA", "pCN"]
+        file_ids = ["ula", "pula", "mala", "pmala"]
+        labels = ["ULA", "pULA", "MALA", "pMALA"]
 
     if args.prior:
         plot_dof_convergence([100], file_ids, labels,
                              OUTPUT_DIR + "dof-convergence.png")
-
-    file_ids.append("exact")
-    labels.append("Exact")
 
     traceplot_dofs(trace_dofs, file_ids, labels, OUTPUT_DIR + "traceplot.png")
     plot_sampler_times(file_ids, labels, OUTPUT_DIR + "sampler-times.png")
@@ -473,17 +470,17 @@ if __name__ == "__main__":
                              include_ess=True,
                              ess_dof="log_measure")
     else:
-        # plot_scalar(file_ids,
-        #             labels,
-        #             OUTPUT_DIR,
-        #             warmup=args.n_warmup,
-        #             dofs="log_measure")
-        sampler_errors_table(args.n_warmup,
-                             file_ids,
-                             labels,
-                             OUTPUT_DIR + "error-table.tex",
-                             include_ess=True,
-                             ess_dof="log_measure")
+        plot_scalar(file_ids,
+                    labels,
+                    OUTPUT_DIR,
+                    warmup=args.n_warmup,
+                    dofs="log_measure")
+        # sampler_errors_table(args.n_warmup,
+        #                      file_ids,
+        #                      labels,
+        #                      OUTPUT_DIR + "error-table.tex",
+        #                      include_ess=True,
+        #                      ess_dof="log_measure")
 
     # if not args.prior:
     #     plot_observations_mesh(args.nx,

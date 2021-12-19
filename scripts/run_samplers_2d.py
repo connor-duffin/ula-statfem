@@ -27,7 +27,7 @@ def scale_eta(eta, acceptance_ratio, learning_rate, lower, upper):
 
 def init_pois(nx, start="warm"):
     pois = PoissonUnitTheta(nx)
-    pois.setup_G(sigma=0.05)
+    pois.setup_G(scale=0.05)
     pois.setup_theta(0.2, 0.2, method="kronecker")
 
     if start == "warm":
@@ -73,6 +73,7 @@ def run_mala(nx,
     i_save = 0
     n_accept = 0
     t_start = time.time()
+    print("sanity check")
     for i in range(n_sample):
         accepted = pois.mala_step(eta=eta, fixed_theta=False)
 
@@ -280,6 +281,10 @@ if __name__ == "__main__":
     parser.add_argument("--n_warmup", type=int, default=0)
     parser.add_argument("--cold_start", action="store_true")
     args = parser.parse_args()
+
+    # make output directory
+    path = os.path.dirname(args.output_file)
+    os.makedirs(path, exist_ok=True)
 
     base, ext = os.path.splitext(args.output_file)
     logging.basicConfig(level=logging.INFO, filename=base + ".log")

@@ -8,25 +8,84 @@ import numpy as np
 from argparse import ArgumentParser
 from sfmcmc.samplers import PoissonUnitThetaPosterior
 from run_samplers_2d import init_sample_array
+from generate_data_2d import sigmoid_obs
 
 logger = logging.getLogger(__name__)
 
 
-# TODO: add option for cold/warm start
-def init_pois(nx, data_file):
+def compute_map_estimate(pois,
+                         stepsize=1e-4,
+                         n_iter=10_000,
+                         atol=1e-8,
+                         epochs=1000):
+    """
+    Compute MAP estimate using a Gauss-Newton Hessian.
+    """
+    norm = np.linalg.norm
+
+    u = pois.sample_posterior_exact()
+    delta = np.zeros((pois.n_dofs, ))
+
+    epoch_interval = n_iter // epochs
+    log_targets = np.zeros((epochs, ))
+
+    i_save = 0
+    for i in range(1, n_iter + 1):
+        u_next, delta = pois.newton_step(u, stepsize)
+
+        if np.any(u_next > 1e8) or np.any(np.isnan(u_next)):
+            logger.info(f"Optimizer diverged at iteration {i} --- exiting")
+            break
+        else:
+            u[:] = u_next
+            lp_next = pois.log_target(u)
+
+        if i % epoch_interval == 0:
+            log_targets[i_save] = lp_next
+            logger.info(f"Norm of delta: {norm(delta):.6e}")
+            i_save += 1
+
+        if norm(delta) <= atol:
+            logger.info(f"Converged at iteration {i}")
+            break
+
+    if i == n_iter:
+        logger.warning("Convergence not necessarily achieved")
+
+    return u
+
+
+def init_pois(nx, data_file, start="cold", obs_function=None):
     pois = PoissonUnitThetaPosterior(nx)
-    pois.setup_G(sigma=0.05)
+    pois.setup_G(scale=0.05)
     pois.setup_theta(0.2, 0.2, method="kronecker")
 
     with h5py.File(data_file, "r") as f:
         pois.setup_dgp(x_obs=f.attrs["x_obs"],
                        n_obs=f.attrs["n_obs"],
                        sigma=f.attrs["sigma"],
-                       scale_factor=f.attrs["scale_factor"])
+                       scale_factor=f.attrs["scale_factor"],
+                       obs_function=obs_function)
+        pois.setup_jax()
         pois.load_data(f["y"])
 
-    pois.setup_pc_post()
-    pois.u[:] = 0.
+    if obs_function is not None:
+        u_optim = compute_map_estimate(pois,
+                                       stepsize=1e-2,
+                                       atol=1e-8,
+                                       n_iter=50_000)
+        pois.setup_pc_post(u_optim)
+
+    if start == "cold":
+        pois.u[:] = 0.
+    elif start == "warm":
+        if obs_function is None:
+            pois.u[:] = pois.sample_posterior_exact()
+        else:
+            pois.u[:] = u_optim
+    else:
+        raise ValueError("Not able to recognise initialization setting.")
+
     return pois
 
 
@@ -74,11 +133,12 @@ def run_ula(nx,
             n_sample,
             eta,
             data_file,
+            obs_function,
             output_file=None,
             n_warmup=0,
             n_inner=1):
     prefix = "(ula)"
-    pois = init_pois(nx, data_file)
+    pois = init_pois(nx, data_file, start="warm", obs_function=obs_function)
     logger.info(prefix + f" Using eta = {eta:.6e}")
 
     samples = init_sample_array(n_sample, 1, pois.n_dofs)
@@ -98,13 +158,13 @@ def run_ula(nx,
 
     logger.info(prefix + " starting sampling")
     for i in range(n_sample):
+        samples[:, i] = pois.u
+        log_measure[i] = pois.log_likelihood(pois.u)
+
         pois.ula_step(eta, fixed_theta=False)
 
         for j in range(n_inner - 1):
             pois.ula_step(eta, fixed_theta=True)
-
-        samples[:, i] = pois.u
-        log_measure[i] = pois.log_likelihood(pois.u)
 
         # cache in case of failure (faster than every `thin`th)
         if i % 1000 == 0 and output_file is not None:
@@ -118,9 +178,9 @@ def run_ula(nx,
         if i % 100 == 0:
             logger.info(prefix + f" iteration {i + 1} of {n_sample}")
 
-        if np.any(pois.u > 1e6):
+        if np.any(pois.u > 1e6) or np.any(np.isnan(pois.u)):
             logger.info(f"ULA failed at iteration {i}")
-            break
+            raise OverflowError
 
     t_end = time.time()
     t_sample = t_end - t_start
@@ -141,11 +201,12 @@ def run_pula(nx,
              n_sample,
              eta,
              data_file,
+             obs_function,
              output_file=None,
              n_warmup=0,
              n_inner=1):
     prefix = "(pula)"
-    pois = init_pois(nx, data_file)
+    pois = init_pois(nx, data_file, start="warm", obs_function=obs_function)
 
     samples = init_sample_array(n_sample, 1, pois.n_dofs)
     log_measure = init_sample_array(n_sample, 1, 1)
@@ -164,13 +225,13 @@ def run_pula(nx,
 
     logger.info(prefix + " starting sampling")
     for i in range(n_sample):
-        pois.pula_step(eta, fixed_theta=False)
-
-        for j in range(n_inner - 1):
-            pois.pula_step(eta, fixed_theta=True)
-
         samples[:, i] = pois.u
         log_measure[i] = pois.log_likelihood(pois.u)
+
+        pois.ula_step(eta, fixed_theta=False, pc=True)
+
+        for j in range(n_inner - 1):
+            pois.ula_step(eta, fixed_theta=True, pc=True)
 
         # cache in case of failure (faster than every `thin`th)
         if i % 1000 == 0 and output_file is not None:
@@ -207,11 +268,12 @@ def run_mala(nx,
              n_sample,
              eta,
              data_file,
+             obs_function,
              output_file=None,
              n_warmup=0,
              n_inner=1):
     prefix = "(mala)"
-    pois = init_pois(nx, data_file)
+    pois = init_pois(nx, data_file, start="warm", obs_function=obs_function)
 
     samples = init_sample_array(n_sample, 1, pois.n_dofs)
     log_measure = init_sample_array(n_sample, 1, 1)
@@ -232,6 +294,9 @@ def run_mala(nx,
     n_accept = 0
     logger.info(prefix + " starting sampling")
     for i in range(n_sample):
+        samples[:, i] = pois.u
+        log_measure[i] = pois.log_likelihood(pois.u)
+
         accepted = pois.mala_step(eta, fixed_theta=False)
 
         for j in range(n_inner - 1):
@@ -239,9 +304,6 @@ def run_mala(nx,
 
         if accepted:
             n_accept += 1
-
-        samples[:, i] = pois.u
-        log_measure[i] = pois.log_likelihood(pois.u)
 
         if i == n_warmup:
             t_start = time.time()
@@ -281,11 +343,12 @@ def run_pmala(nx,
               n_sample,
               eta,
               data_file,
+              obs_function,
               output_file,
               n_warmup=0,
               n_inner=1):
     prefix = "(pmala)"
-    pois = init_pois(nx, data_file)
+    pois = init_pois(nx, data_file, start="warm", obs_function=obs_function)
 
     samples = init_sample_array(n_sample, 1, pois.n_dofs)
     log_measure = init_sample_array(n_sample, 1, 1)
@@ -306,16 +369,16 @@ def run_pmala(nx,
     n_accept = 0
     logger.info(prefix + " starting sampling")
     for i in range(n_sample):
-        accepted = pois.pmala_step(eta, fixed_theta=False)
+        samples[:, i] = pois.u
+        log_measure[i] = pois.log_likelihood(pois.u)
+
+        accepted = pois.mala_step(eta, fixed_theta=False, pc=True)
 
         for j in range(n_inner - 1):
-            accepted = pois.pmala_step(eta, fixed_theta=True)
+            accepted = pois.mala_step(eta, fixed_theta=True, pc=True)
 
         if accepted:
             n_accept += 1
-
-        samples[:, i] = pois.u
-        log_measure[i] = pois.log_likelihood(pois.u)
 
         if i == n_warmup:
             t_start = time.time()
@@ -350,9 +413,16 @@ def run_pmala(nx,
         output.close()
 
 
-def run_pcn(nx, n_sample, eta, data_file, output_file, n_warmup=0, n_inner=1):
+def run_pcn(nx,
+            n_sample,
+            eta,
+            data_file,
+            obs_function,
+            output_file,
+            n_warmup=0,
+            n_inner=1):
     prefix = "(pcn)"
-    pois = init_pois(nx, data_file)
+    pois = init_pois(nx, data_file, start="warm", obs_function=obs_function)
 
     samples = init_sample_array(n_sample, 1, pois.n_dofs)
     log_measure = init_sample_array(n_sample, 1, 1)
@@ -372,6 +442,9 @@ def run_pcn(nx, n_sample, eta, data_file, output_file, n_warmup=0, n_inner=1):
 
     n_accept = 0
     for i in range(n_sample):
+        samples[:, i] = pois.u
+        log_measure[i] = pois.log_likelihood(pois.u)
+
         accepted = pois.pcn_step(eta, fixed_theta=False)
 
         for j in range(n_inner - 1):
@@ -379,9 +452,6 @@ def run_pcn(nx, n_sample, eta, data_file, output_file, n_warmup=0, n_inner=1):
 
         if accepted:
             n_accept += 1
-
-        samples[:, i] = pois.u
-        log_measure[i] = pois.log_likelihood(pois.u)
 
         if i == n_warmup:
             t_start = time.time()
@@ -426,8 +496,13 @@ if __name__ == "__main__":
     parser.add_argument("--n_inner", type=int, default=1)
     parser.add_argument("--output_file", type=str)
     parser.add_argument("--data_file", type=str)
+    parser.add_argument("--nonlinear_observation", action="store_true")
     args = parser.parse_args()
     logger.info(args)
+
+    # make output directory
+    path = os.path.dirname(args.output_file)
+    os.makedirs(path, exist_ok=True)
 
     base, ext = os.path.splitext(args.output_file)
     logging.basicConfig(level=logging.INFO, filename=base + ".log")
@@ -449,23 +524,28 @@ if __name__ == "__main__":
     logger.info("Storing output to %s, using data in %s", output_file,
                 data_file)
 
+    if args.nonlinear_observation:
+        obs_function = sigmoid_obs
+    else:
+        obs_function = None
+
     sampler = args.sampler.lower()
     if sampler == "exact":
         run_exact(args.nx, args.n_sample, data_file, output_file)
     elif sampler == "ula":
-        run_ula(args.nx, args.n_sample, eta, data_file, output_file,
-                args.n_warmup, args.n_inner)
+        run_ula(args.nx, args.n_sample, eta, data_file, obs_function,
+                output_file, args.n_warmup, args.n_inner)
     elif sampler == "pula":
-        run_pula(args.nx, args.n_sample, eta, data_file, output_file,
-                 args.n_warmup, args.n_inner)
+        run_pula(args.nx, args.n_sample, eta, data_file, obs_function,
+                 output_file, args.n_warmup, args.n_inner)
     elif sampler == "mala":
-        run_mala(args.nx, args.n_sample, eta, data_file, output_file,
-                 args.n_warmup, args.n_inner)
+        run_mala(args.nx, args.n_sample, eta, data_file, obs_function,
+                 output_file, args.n_warmup, args.n_inner)
     elif sampler == "pmala":
-        run_pmala(args.nx, args.n_sample, eta, data_file, output_file,
-                  args.n_warmup, args.n_inner)
+        run_pmala(args.nx, args.n_sample, eta, data_file, obs_function,
+                  output_file, args.n_warmup, args.n_inner)
     elif sampler == "pcn":
-        run_pcn(args.nx, args.n_sample, eta, data_file, output_file,
-                args.n_warmup, args.n_inner)
+        run_pcn(args.nx, args.n_sample, eta, data_file, obs_function,
+                output_file, args.n_warmup, args.n_inner)
     else:
         print(f"Sampler argument '{sampler}' not recognised")

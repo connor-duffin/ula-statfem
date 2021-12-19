@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from argparse import ArgumentParser
-from arviz import ess
+from arviz import autocorr, ess
 from tabulate import tabulate
 
 from plot_samplers_2d import read_data
@@ -69,10 +69,6 @@ def plot_dof_convergence(dofs, file_ids, labels, output_file):
 
 def plot_scalar(file_ids, labels, output_dir, warmup=0, dofs=[0]):
     """Plot ACF, traceplots, and print ESS of the scalar. """
-    def autocorr(x, t=1):
-        """Compute the autocorrelation from a 1D array. """
-        return np.corrcoef(np.array([x[:-t], x[t:]]))
-
     n_plots = len(file_ids)
     fig_trace, ax_trace = plt.subplots(1,
                                        1,
@@ -86,25 +82,24 @@ def plot_scalar(file_ids, labels, output_dir, warmup=0, dofs=[0]):
                                     figsize=(4, 3))
 
     max_lags = 100
-    lags = list(range(1, max_lags))
+    lags = list(range(max_lags))
     acfs = np.zeros((max_lags - 1, ))
     for i in range(n_plots):
-        log_measure, _ = read_data(SAMPLER_FILES[file_ids[i]],
-                                   dofs=dofs,
-                                   warmup=warmup)
-        log_measure = log_measure[0]
+        scalar, _ = read_data(SAMPLER_FILES[file_ids[i]],
+                              dofs=dofs,
+                              warmup=warmup)
+        scalar = scalar[0]
 
         # ESS
-        samples_n_eff = ess(log_measure)
+        samples_n_eff = ess(scalar)
         print(f"ESS ({labels[i]}): {samples_n_eff}")
 
         # traceplots
-        ax_trace.plot(log_measure, alpha=0.8, label=labels[i])
+        ax_trace.plot(scalar, alpha=0.8, label=labels[i])
 
         # ACF
-        for j, lag in enumerate(lags):
-            acfs[j] = autocorr(log_measure, lag)[0, 1]
-        axs_acf.plot(lags, acfs, ".-", label=f"{labels[i]}")
+        acfs = autocorr(scalar)
+        axs_acf.plot(lags, acfs[:max_lags], ".-", label=f"{labels[i]}")
 
     axs_acf.set_ylabel("ACF")
     axs_acf.set_xlabel(r"Lag $j$")
@@ -152,8 +147,8 @@ def sampler_errors_table(warmup,
         mean_error = norm(mean_exact - mean_approx) / norm_mean_exact
         var_error = norm(var_exact - var_approx) / norm_var_exact
 
-        row.append(mean_error)
-        row.append(var_error)
+        row.append(f"{mean_error:.6f}")
+        row.append(f"{var_error:.6f}")
 
         if include_ess:
             log_measure, t_sample = read_data(SAMPLER_FILES[file_id],
@@ -161,7 +156,7 @@ def sampler_errors_table(warmup,
                                               warmup=warmup)
             # NOTE: this assumes t_sample is for the post-warmup iterations
             samples_n_eff = ess(log_measure)
-            row.append(samples_n_eff / t_sample)
+            row.append(f"{samples_n_eff / t_sample:.3f}")
 
         table.append(row)
         row = []
@@ -171,10 +166,9 @@ def sampler_errors_table(warmup,
 
     header_simple = ["sampler", "mean rel. error", "var rel. error"]
     header = [
-        "Sampler", "$\\lVert \\mathbb{E}_N (u) - \\mathbb{E} (u) \\rVert /" +
-        "\\lVert \\mathbb{E} (u) \\rVert$",
-        "$\\lVert \\mathrm{var}_N (u) - \\mathrm{var} (u)\\rVert / " +
-        "\\lVert \\mathrm{var}(u) \\rVert$"
+        "Sampler",
+        "$\\mathsf{Error}(\\mathbb{E}(u))$",
+        "$\\mathsf{Error}(\\mathrm{var}(u))$"
     ]
 
     if include_ess:
@@ -216,13 +210,9 @@ if __name__ == "__main__":
                 args.output_dir,
                 warmup=args.n_warmup,
                 dofs=[100])
-
-    file_ids.append("exact")
-    labels.append("Exact")
-
     sampler_errors_table(args.n_warmup,
                          file_ids,
                          labels,
                          args.output_dir + "error-table.tex",
                          include_ess=True,
-                         ess_dof="log_measure")
+                         ess_dof=[100])
