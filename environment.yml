@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - python=3.8
   - fenics
   - pip
   - pip:
@@ -17,3 +18,4 @@ dependencies:
     - scipy
     - scikit-sparse
     - tabulate
+    - jax[cpu]
