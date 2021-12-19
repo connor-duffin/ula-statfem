@@ -8,6 +8,7 @@ DATA_FILE_SMALL = $(OUTPUT_DIR_POST_SMALL)/data.h5
 NX = 128
 OUTPUT_DIR_PRIOR = outputs/prior-mesh-$(NX)
 OUTPUT_DIR_POST = outputs/posterior-mesh-ll-$(NX)
+OUTPUT_DIR_NLL = outputs/posterior-mesh-nll-128
 DATA_FILE = $(OUTPUT_DIR_POST)/data.h5
 
 
@@ -128,9 +129,72 @@ plots_post_small: all_samplers_post_small scripts/plot_samplers_2d.py
 		--nx $(NX_SMALL) --n_warmup 500 \
 		--input_dir outputs/posterior-mesh-ll-32/ --output_dir figures/posterior-mesh-32/
 
+# nonlinear likelihood example
+# ----------------------------
+N_WARMUP = 20000
+N_SAMPLE = 40000
+
+# nonlinear observation processs
+$(OUTPUT_DIR_NLL)/data.h5: scripts/generate_data_2d.py
+	python3 $< --nonlinear_observation --output_file $@
+
+# exact samples: 200_000 samples from pMALA
+$(OUTPUT_DIR_NLL)/exact.h5: scripts/run_samplers_2d_posterior.py \
+	$(OUTPUT_DIR_NLL)/data.h5
+	python3 $< --sampler pmala --nonlinear_observation \
+		--nx $(NX) --n_sample 220000 --n_warmup $(N_WARMUP) --n_inner 10 \
+		--data_file $(OUTPUT_DIR_NLL)/data.h5 --output_file $@
+
+$(OUTPUT_DIR_NLL)/ula.h5: scripts/run_samplers_2d_posterior.py \
+	$(OUTPUT_DIR_NLL)/data.h5
+	python3 $< --sampler ula --nonlinear_observation \
+		--eta 1e-9 --nx $(NX) --n_sample $(N_SAMPLE) --n_warmup $(N_WARMUP) --n_inner 50 \
+		--data_file $(OUTPUT_DIR_NLL)/data.h5 --output_file $@
+
+$(OUTPUT_DIR_NLL)/pula.h5: scripts/run_samplers_2d_posterior.py \
+	$(OUTPUT_DIR_NLL)/data.h5
+	python3 $< --sampler pula --nonlinear_observation \
+		--nx $(NX) --n_sample $(N_SAMPLE) --n_warmup $(N_WARMUP) --n_inner 10 \
+		--data_file $(OUTPUT_DIR_NLL)/data.h5 --output_file $@
+
+$(OUTPUT_DIR_NLL)/mala.h5: scripts/run_samplers_2d_posterior.py \
+	$(OUTPUT_DIR_NLL)/data.h5
+	python3 $< --sampler mala --nonlinear_observation \
+		--eta 1e-10 --nx $(NX) --n_sample $(N_SAMPLE) --n_warmup $(N_WARMUP) --n_inner 10 \
+		--data_file $(OUTPUT_DIR_NLL)/data.h5 --output_file $@
+
+$(OUTPUT_DIR_NLL)/pmala.h5: scripts/run_samplers_2d_posterior.py \
+	$(OUTPUT_DIR_NLL)/data.h5
+	python3 $< --sampler pmala --nonlinear_observation \
+		--nx $(NX) --n_sample $(N_SAMPLE) --n_warmup $(N_WARMUP) --n_inner 10 \
+		--data_file $(OUTPUT_DIR_NLL)/data.h5 --output_file $@
+
+$(OUTPUT_DIR_NLL)/pcn.h5: scripts/run_samplers_2d_posterior.py \
+	$(OUTPUT_DIR_NLL)/data.h5
+	python3 $< --sampler pcn --nonlinear_observation \
+		--eta 1e-3 --nx $(NX) --n_sample $(N_SAMPLE) --n_warmup $(N_WARMUP) --n_inner 10 \
+		--data_file $(OUTPUT_DIR_NLL)/data.h5 --output_file $@
+
+all_samplers_nll_post: $(OUTPUT_DIR_NLL)/ula.h5 \
+	$(OUTPUT_DIR_NLL)/pula.h5 \
+	$(OUTPUT_DIR_NLL)/mala.h5 \
+	$(OUTPUT_DIR_NLL)/pmala.h5
+
+clean_all_samplers_nll_post:
+	rm $(OUTPUT_DIR_NLL)/ula.h5 \
+			$(OUTPUT_DIR_NLL)/pula.h5 \
+			$(OUTPUT_DIR_NLL)/mala.h5 \
+			$(OUTPUT_DIR_NLL)/pmala.h5
+
+plots_post_paper_nll: scripts/plot_samplers_2d.py
+	python3 scripts/plot_post_paper.py \
+		--nx $(NX) --n_warmup 20000 \
+		--file_ids pula pmala ula mala pcn \
+		--input_dir $(OUTPUT_DIR_NLL)/ \
+		--output_dir figures/posterior-mesh-nll-128/
+
 
 # high-dimensional prior
-# take 10000 samples, first 5000 as warmup
 $(OUTPUT_DIR_PRIOR)/pula.h5:
 	python3 scripts/run_samplers_2d.py \
 		--sampler pula-lu \
@@ -167,7 +231,7 @@ plots_prior: scripts/plot_samplers_2d.py
 
 plots_prior_paper: scripts/plot_prior_paper.py
 	python3 $< \
-		--nx 128 --n_warmup 5000 \
+		--nx 128 --n_warmup 0 \
 		--input_dir $(OUTPUT_DIR_PRIOR)/ \
 		--output_dir figures/prior-mesh-${NX}/
 
@@ -178,8 +242,8 @@ $(DATA_FILE):
 
 $(OUTPUT_DIR_POST)/ula.h5: $(DATA_FILE)
 	python3 scripts/run_samplers_2d_posterior.py \
-		--sampler ula --eta 5e-9 \
-		--nx $(NX) --n_sample 20000 --n_warmup 10000 --n_inner 100 \
+		--sampler ula --eta 1e-9 \
+		--nx $(NX) --n_sample 20000 --n_warmup 10000 --n_inner 10 \
 		--output_file $@ --data_file $(DATA_FILE)
 
 $(OUTPUT_DIR_POST)/mala.h5: $(DATA_FILE)
@@ -227,7 +291,8 @@ plots_post: all_samplers_post scripts/plot_samplers_2d.py
 
 plots_post_paper: scripts/plot_post_paper.py
 	python3 $< \
-		--nx 128 --n_warmup 10000 \
+		--nx 128 --n_warmup 0 \
+		--file_ids pula pmala ula mala \
 		--input_dir outputs/posterior-mesh-ll-128/ \
 		--output_dir figures/posterior-mesh-128/
 
