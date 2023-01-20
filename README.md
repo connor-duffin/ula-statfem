@@ -4,14 +4,14 @@ Scripts and notebooks for simulations on unadjusted Langevin (ULA) and precondit
 
 ```{bibtex}
 @article{akyildiz2022statistical,
-author = {Akyildiz, \"{O}mer Deniz and Duffin, Connor and Sabanis, Sotirios and Girolami, Mark},
-title = {Statistical Finite Elements via Langevin Dynamics},
-journal = {SIAM/ASA Journal on Uncertainty Quantification},
-volume = {10},
-number = {4},
-pages = {1560-1585},
-year = {2022},
-doi = {10.1137/21M1463094}
+  author = {Akyildiz, \"{O}mer Deniz and Duffin, Connor and Sabanis, Sotirios and Girolami, Mark},
+  title = {Statistical Finite Elements via Langevin Dynamics},
+  journal = {SIAM/ASA Journal on Uncertainty Quantification},
+  volume = {10},
+  number = {4},
+  pages = {1560-1585},
+  year = {2022},
+  doi = {10.1137/21M1463094}
 }
 ```
 
