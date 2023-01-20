@@ -1,6 +1,6 @@
 # Langevin samplers for statFEM
 
-Scripts and notebooks for simulations on unadjusted Langevin (ULA) and preconditioned unadjusted Langevin samplers (pULA), for the statistical finite element method. This uses `Fenics` for FEM. Based on the work of [Akyildiz, Duffin, Sabanis, and Girolami (2021)](https://doi.org/10.1137/21M1463094). You can cite this via:
+Scripts and notebooks for simulations on unadjusted Langevin (ULA) and preconditioned unadjusted Langevin samplers (pULA), for the statistical finite element method (statFEM). This uses `Fenics` for FEM. Based on the work of [Akyildiz, Duffin, Sabanis, and Girolami (2022)](https://doi.org/10.1137/21M1463094). You can cite this via:
 
 ```{bibtex}
 @article{akyildiz2022statistical,
