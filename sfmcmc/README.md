@@ -10,17 +10,14 @@ This package contains samplers for the statistical finite element method, as imp
 
 With various preconditioning strategies available.
 
-This package is currently quite bare-bones, implementing only the problems and samplers that we have investigated thus far. Further development will be for additional problems and samplers.
-
+This package is currently quite bare-bones, implementing only the problems and samplers that we have investigated thus far.
 Please let me know if there are any bugs! (connor.p.duffin (@) gmail.com)
 
 ## Installation
 
-This package is not in `PyPI` yet, so just clone and install:
+This package is not in `PyPI` yet, so just `cd` into this directory and run:
 
 ```{bash}
-git clone https://github.com/connor-duffin/sfmcmc.git
-cd sfmcmc
 pip install -e sfmcmc
 ```
 
@@ -30,8 +27,15 @@ The `-e` flag creates an editable install; any local changes you make are then a
 
 A `bibtex` reference for this paper is:
 
-```
-@article{akyildiz2021statistical,
-  blah blah blah
+```{bibtex}
+@article{akyildiz2022statistical,
+  author = {Akyildiz, \"{O}mer Deniz and Duffin, Connor and Sabanis, Sotirios and Girolami, Mark},
+  title = {Statistical Finite Elements via Langevin Dynamics},
+  journal = {SIAM/ASA Journal on Uncertainty Quantification},
+  volume = {10},
+  number = {4},
+  pages = {1560-1585},
+  year = {2022},
+  doi = {10.1137/21M1463094}
 }
 ```
