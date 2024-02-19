@@ -17,8 +17,8 @@ def test_pc_1d():
     pois.setup_pc()
 
     # check that the setup is OK
-    assert type(pois.M_inv) == csc_matrix
-    assert type(pois.M_inv_chol) == CholFactor
+    assert isinstance(pois.M_inv, csc_matrix)
+    assert isinstance(pois.M_inv_chol, CholFactor)
     assert callable(pois.M_inv_chol.solve_A)
 
 

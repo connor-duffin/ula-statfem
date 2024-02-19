@@ -37,11 +37,11 @@ def test_build_observation_operator():
     H = build_observation_operator(x_obs, V)
 
     assert H.shape == (30, 129)
-    assert type(H) == csr_matrix
+    assert isinstance(H, csr_matrix)
     np.testing.assert_allclose(np.sum(H, axis=1), 1.)
 
     H_petsc = build_observation_operator(x_obs, V, out="petsc")
-    assert type(H_petsc) == Mat
+    assert isinstance(H_petsc, Mat)
     with pytest.raises(ValueError):
         build_observation_operator(x_obs, V, out="fenics")
 
@@ -72,14 +72,14 @@ def test_dolfin_to_csr():
     M = fe.assemble(form)
     M_csr = dolfin_to_csr(M)
     assert M_csr.shape == (33, 33)
-    assert type(M_csr) == csr_matrix
+    assert isinstance(M_csr, csr_matrix)
 
     # check PETScMatrix
     M = fe.PETScMatrix()
     fe.assemble(form, tensor=M)
     M_csr = dolfin_to_csr(M)
     assert M_csr.shape == (33, 33)
-    assert type(M_csr) == csr_matrix
+    assert isinstance(M_csr, csr_matrix)
 
 
 def test_kron_matvec():

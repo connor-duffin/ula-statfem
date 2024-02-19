@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from pyDOE import lhs
 
 from scipy.linalg import solve
-from scipy.sparse import csc_matrix, csr_matrix
+from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import splu
 
 from sksparse.cholmod import Factor as CholFactor
@@ -122,7 +122,7 @@ def test_setup_pc(prior_pois):
 def test_setup_jax(post_pois):
     post_pois.setup_jax()
 
-    assert type(post_pois.H_jax) == dict
+    assert isinstance(post_pois.H_jax, dict)
     assert post_pois.use_jax
     assert callable(post_pois.grad_log_likelihood_jax)
 
@@ -135,7 +135,7 @@ def test_prior_mala(prior_pois):
     accepted = prior_pois.mala_step(eta=1e-8, fixed_theta=True)
     A = prior_pois.A.copy()
 
-    assert type(accepted) == bool
+    assert type(accepted) is bool
     np.testing.assert_allclose(A.todense(), A_prev.todense())
 
     _ = prior_pois.pmala_step(eta=1e-8)
@@ -143,7 +143,7 @@ def test_prior_mala(prior_pois):
     accepted = prior_pois.pmala_step(eta=1e-8, fixed_theta=True)
     A = prior_pois.A.copy()
 
-    assert type(accepted) == bool
+    assert type(accepted) is bool
     np.testing.assert_allclose(A.todense(), A_prev.todense())
 
 
@@ -188,9 +188,9 @@ def test_posterior_data():
     assert pois.y.shape == (50, 10)  # 10 obs of 50 points
 
     assert pois.M.shape == (1089, 1089)
-    assert type(pois.M) == csc_matrix
-    assert type(pois.M_chol) == CholFactor  # numeric PC factor
-    assert type(pois.factor) == CholFactor  # symbolic factor
+    assert isinstance(pois.M, csc_matrix)
+    assert isinstance(pois.M_chol, CholFactor)  # numeric PC factor
+    assert isinstance(pois.factor, CholFactor)  # symbolic factor
 
     pois.generate_data()
     assert pois.y_mean.shape == (pois.n_y, )
@@ -295,7 +295,7 @@ def test_posterior_mala(post_pois):
     accepted = post_pois.mala_step(eta=1e-8, fixed_theta=True)
     A = post_pois.A.copy()
 
-    assert type(accepted) == bool
+    assert type(accepted) is bool
     np.testing.assert_allclose(A.todense(), A_prev.todense())
 
 
@@ -308,8 +308,6 @@ def test_posterior_pcn(post_pois):
     assert callable(post_pois.A_factor.solve_A)
 
     post_pois.pcn_step(fixed_theta=True)
-
-    import pytest
 
 
 def test_init_nonlinear():
@@ -328,8 +326,8 @@ def test_setup_pc_nonlinear():
     pois.setup_pc()
 
     # check that the setup is OK
-    assert type(pois.M_inv) == csc_matrix
-    assert type(pois.M_inv_chol) == CholFactor
+    assert isinstance(pois.M_inv, csc_matrix)
+    assert isinstance(pois.M_inv_chol, CholFactor)
     assert callable(pois.M_inv_chol.solve_A)
 
 
