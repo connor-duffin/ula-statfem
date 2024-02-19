@@ -54,14 +54,14 @@ clean_output_dir_prior_small:
 
 plots_prior_paper_small: scripts/plot_prior_paper_small.py
 	python3 scripts/plot_prior_paper_small.py \
-		--nx 32 \
-		--input_dir outputs/prior-mesh-32/ \
-		--output_dir figures/prior-mesh-32/
+		--nx $(NX_SMALL) \
+		--input_dir $(OUTPUT_DIR_PRIOR_SMALL)/ \
+		--output_dir figures/prior-mesh-$(NX_SMALL)/
 
 plots_prior_small: all_samplers_prior_small scripts/plot_samplers_2d.py
 	python3 scripts/plot_samplers_2d.py \
 		--prior --nx $(NX_SMALL) --n_warmup 0 \
-		--input_dir $(OUTPUT_DIR_PRIOR_SMALL)/ --output_dir figures/prior-mesh-32/
+		--input_dir $(OUTPUT_DIR_PRIOR_SMALL)/ --output_dir figures/prior-mesh-$(NX_SMALL)/
 
 
 
