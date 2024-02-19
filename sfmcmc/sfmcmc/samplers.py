@@ -1446,7 +1446,7 @@ class NonlinearPoisson1D:
 
         self.u_curr[:] -= (eta * grad_phi_pc + np.sqrt(2 * eta) * w)
 
-    def tula_step(self, eta=1 - 2):
+    def tula_step(self, eta=1e-2):
         z = np.random.normal(size=(self.n_dofs, ))
         z[self.bc_dofs] = 0.
 
@@ -1457,7 +1457,7 @@ class NonlinearPoisson1D:
             2 * eta) * z
         self.u_curr[:] = u_curr
 
-    def tulac_step(self, eta=1 - 2):
+    def tulac_step(self, eta=1e-2):
         z = np.random.normal(size=(self.n_dofs, ))
         z[self.bc_dofs] = 0.
 
